@@ -21,7 +21,14 @@
 
 - Python 3.11+
 - 本地可运行 `python3`
-- 无需安装额外依赖
+- `sketch-layout-zoning` 主 CLI 无需额外依赖
+- 如果你要运行 `app-layout-zoning/scripts/analyze_zones.py` 或相关测试，需要安装 `Pillow`
+
+安装 `Pillow`：
+
+```bash
+python3 -m pip install Pillow
+```
 
 ## 用法
 
@@ -79,4 +86,12 @@ export SKETCH_LAYOUT_ZONING_FIXTURE=/path/to/example.sketch
 python3 -m unittest discover -s tests -v
 ```
 
-如果没有提供样例文件，这些集成测试会自动跳过。
+这里的 `/path/to/example.sketch` 必须替换成你机器上的真实 Sketch 文件路径，例如：
+
+```bash
+export SKETCH_LAYOUT_ZONING_FIXTURE="$HOME/Downloads/test 01.sketch"
+python3 -m unittest discover -s tests -v
+```
+
+如果没有提供真实样例文件，Sketch 集成测试会自动跳过。
+如果没有安装 `Pillow`，图片标注相关测试也会自动跳过。

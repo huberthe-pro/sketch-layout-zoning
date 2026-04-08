@@ -7,13 +7,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from PIL import Image
+try:
+    from PIL import Image
+except ModuleNotFoundError:
+    Image = None
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "app-layout-zoning" / "scripts" / "analyze_zones.py"
 
 
+@unittest.skipUnless(Image is not None, "Pillow not installed")
 class AnalyzeZonesTests(unittest.TestCase):
     def run_script(self, image_path: Path, zones_path: Path, *extra_args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
