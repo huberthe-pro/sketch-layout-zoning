@@ -175,6 +175,71 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
             writer.writerow(row)
 
 
+def pct(value: float | None) -> str:
+    if value is None:
+        return "-"
+    return f"{value:.2f}%"
+
+
+def render_tree_lines(nodes: list[dict[str, Any]], depth: int = 0) -> list[str]:
+    lines: list[str] = []
+    indent = "  " * depth
+    for node in nodes:
+        parent_part = ""
+        if node.get("parent_coverage_pct") is not None:
+            parent_part = f" | 父级占比 {pct(node['parent_coverage_pct'])}"
+        lines.append(
+            f"{indent}- L{node.get('level', '?')} {node['label']} | 整页占比 {pct(node.get('coverage_pct'))}{parent_part} | 区域 {node['width']}x{node['height']}"
+        )
+        lines.extend(render_tree_lines(node.get("children", []), depth + 1))
+    return lines
+
+
+def render_markdown_report(stats: dict[str, Any]) -> str:
+    source = stats["source"]
+    summary = stats["summary"]
+    lines = [
+        "# Sketch Layout Zoning Report",
+        "",
+        "## 概览",
+        "",
+        f"- 源文件: `{source['path']}`",
+        f"- 页面: `{source['page_name']}`",
+        f"- 根分组: `{source['root_name']}`",
+        f"- 画布尺寸: `{source['root_width']} x {source['root_height']}`",
+        f"- 分区数量: `{summary['zone_count']}`",
+        f"- 联合覆盖率: `{pct(summary['coverage_pct'])}`",
+        f"- 分区面积求和占比: `{pct(summary['sum_of_zone_areas_pct'])}`",
+        "",
+        "## 分层汇总",
+        "",
+        "| 层级 | 分区数 | 联合覆盖率 | 面积求和占比 |",
+        "| --- | ---: | ---: | ---: |",
+    ]
+
+    for level, info in sorted(stats["level_summary"].items(), key=lambda item: int(item[0])):
+        lines.append(
+            f"| L{level} | {info['zone_count']} | {pct(info['coverage_pct'])} | {pct(info['sum_of_zone_areas_pct'])} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## 模块树",
+            "",
+            *render_tree_lines(stats["tree"]),
+            "",
+            "## 说明",
+            "",
+            "- `整页占比` 表示该模块面积占整个 Sketch 页面根分组面积的百分比。",
+            "- `父级占比` 只在存在父级模块时出现，表示该模块面积占父级模块面积的百分比。",
+            "- 不同层级之间可能存在父子包含关系，因此不同层级的占比不应直接相加理解为总占比。",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def extract_payload(args: argparse.Namespace) -> dict[str, Any]:
     module = load_extract_module()
     _, page = module.choose_page(args.sketch, args.page_name)
@@ -208,9 +273,17 @@ def cmd_report(args: argparse.Namespace) -> int:
     write_json(args.zones_output, extracted)
     write_json(args.json_output, stats)
     write_csv(args.csv_output, stats["zones"])
+    if args.markdown_output:
+        args.markdown_output.parent.mkdir(parents=True, exist_ok=True)
+        args.markdown_output.write_text(
+            render_markdown_report(stats) + "\n",
+            encoding="utf-8",
+        )
     print(f"Zones JSON: {args.zones_output}")
     print(f"Stats JSON: {args.json_output}")
     print(f"Stats CSV: {args.csv_output}")
+    if args.markdown_output:
+        print(f"Markdown Report: {args.markdown_output}")
     print(json.dumps(stats["level_summary"], ensure_ascii=False, indent=2))
     return 0
 
@@ -277,6 +350,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("sketch-stats.csv"),
         help="Output path for stats CSV",
+    )
+    report_parser.add_argument(
+        "--markdown-output",
+        type=Path,
+        default=Path("sketch-report.md"),
+        help="Output path for a human-readable Markdown report",
     )
     report_parser.set_defaults(func=cmd_report)
 

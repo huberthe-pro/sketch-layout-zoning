@@ -27,10 +27,12 @@ echo "Using sketch file: ${SKETCH_FILE}"
 "${ROOT_DIR}/sketch-layout-zoning" report "${SKETCH_FILE}" \
   --zones-output "${OUTPUT_DIR}/sketch-zones.json" \
   --json-output "${OUTPUT_DIR}/sketch-stats.json" \
-  --csv-output "${OUTPUT_DIR}/sketch-stats.csv"
+  --csv-output "${OUTPUT_DIR}/sketch-stats.csv" \
+  --markdown-output "${OUTPUT_DIR}/sketch-report.md"
 
 echo
 echo "输出文件："
 echo "  ${OUTPUT_DIR}/sketch-zones.json"
 echo "  ${OUTPUT_DIR}/sketch-stats.json"
 echo "  ${OUTPUT_DIR}/sketch-stats.csv"
+echo "  ${OUTPUT_DIR}/sketch-report.md"

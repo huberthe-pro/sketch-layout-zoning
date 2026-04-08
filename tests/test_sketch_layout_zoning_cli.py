@@ -50,6 +50,7 @@ class SketchLayoutZoningCliTests(unittest.TestCase):
             zones_output = temp / "zones.json"
             json_output = temp / "stats.json"
             csv_output = temp / "stats.csv"
+            md_output = temp / "report.md"
             result = self.run_cli(
                 "report",
                 str(SKETCH),
@@ -59,11 +60,15 @@ class SketchLayoutZoningCliTests(unittest.TestCase):
                 str(json_output),
                 "--csv-output",
                 str(csv_output),
+                "--markdown-output",
+                str(md_output),
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             stats = json.loads(json_output.read_text(encoding="utf-8"))
+            markdown = md_output.read_text(encoding="utf-8")
             self.assertTrue(zones_output.exists())
             self.assertTrue(csv_output.exists())
+            self.assertTrue(md_output.exists())
             self.assertIn("level_summary", stats)
             self.assertIn("tree", stats)
             self.assertGreaterEqual(len(stats["zones"]), 1)
@@ -72,6 +77,8 @@ class SketchLayoutZoningCliTests(unittest.TestCase):
             self.assertTrue(all("parent_coverage_pct" in row for row in child_rows))
             self.assertGreaterEqual(len(stats["tree"]), 1)
             self.assertTrue(all("coverage_pct" in node for node in stats["zones"]))
+            self.assertIn("# Sketch Layout Zoning Report", markdown)
+            self.assertIn("## 模块树", markdown)
 
     def test_extract_generates_zones_json(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -95,6 +102,7 @@ class SketchLayoutZoningCliTests(unittest.TestCase):
             zones_output = Path(temp_dir) / "zones.json"
             json_output = Path(temp_dir) / "stats.json"
             csv_output = Path(temp_dir) / "stats.csv"
+            md_output = Path(temp_dir) / "report.md"
             page_name = self.find_first_content_page_name()
             result = self.run_cli(
                 "report",
@@ -107,6 +115,8 @@ class SketchLayoutZoningCliTests(unittest.TestCase):
                 str(json_output),
                 "--csv-output",
                 str(csv_output),
+                "--markdown-output",
+                str(md_output),
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             stats = json.loads(json_output.read_text(encoding="utf-8"))
