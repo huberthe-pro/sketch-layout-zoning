@@ -4,6 +4,16 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SKETCH_DIR="${ROOT_DIR}/sketch"
 
+slugify() {
+  local input="$1"
+  local output
+  output="$(printf '%s' "${input}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
+  if [[ -z "${output}" ]]; then
+    output="report"
+  fi
+  printf '%s' "${output}"
+}
+
 if [[ $# -gt 0 ]]; then
   SKETCH_FILE="$1"
 else
@@ -20,19 +30,24 @@ if [[ ! -f "${SKETCH_FILE}" ]]; then
   exit 2
 fi
 
-OUTPUT_DIR="${ROOT_DIR}/output"
-mkdir -p "${OUTPUT_DIR}"
+REPORT_NAME="$(basename "${SKETCH_FILE}")"
+REPORT_STEM="${REPORT_NAME%.*}"
+REPORT_DIR="$(cd "$(dirname "${SKETCH_FILE}")" && pwd)/${REPORT_STEM}.report"
+mkdir -p "${REPORT_DIR}"
 
 echo "Using sketch file: ${SKETCH_FILE}"
 "${ROOT_DIR}/sketch-layout-zoning" report "${SKETCH_FILE}" \
-  --zones-output "${OUTPUT_DIR}/sketch-zones.json" \
-  --json-output "${OUTPUT_DIR}/sketch-stats.json" \
-  --csv-output "${OUTPUT_DIR}/sketch-stats.csv" \
-  --markdown-output "${OUTPUT_DIR}/sketch-report.md"
+  --zones-output "${REPORT_DIR}/sketch-zones.json" \
+  --json-output "${REPORT_DIR}/sketch-stats.json" \
+  --csv-output "${REPORT_DIR}/sketch-stats.csv" \
+  --markdown-output "${REPORT_DIR}/sketch-report.md"
 
 echo
+echo "输出目录："
+echo "  ${REPORT_DIR}"
+echo
 echo "输出文件："
-echo "  ${OUTPUT_DIR}/sketch-zones.json"
-echo "  ${OUTPUT_DIR}/sketch-stats.json"
-echo "  ${OUTPUT_DIR}/sketch-stats.csv"
-echo "  ${OUTPUT_DIR}/sketch-report.md"
+echo "  ${REPORT_DIR}/sketch-zones.json"
+echo "  ${REPORT_DIR}/sketch-stats.json"
+echo "  ${REPORT_DIR}/sketch-stats.csv"
+echo "  ${REPORT_DIR}/sketch-report.md"

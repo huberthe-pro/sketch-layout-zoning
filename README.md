@@ -55,7 +55,19 @@ python3 -m pip install Pillow
 ./scripts/run_local.sh
 ```
 
-它会默认读取 `./sketch` 目录里的第一个 `.sketch` 文件，并把结果写到 `./output`。
+它会默认读取 `./sketch` 目录里的第一个 `.sketch` 文件，并把结果写到源文件旁边的独立目录。
+每个 Sketch 文件会使用一一对应的报告目录：
+
+```text
+<sketch所在目录>/<sketch文件名>.report/
+```
+
+例如：
+
+```text
+/some/path/my-page.sketch
+/some/path/my-page.report/
+```
 
 如果要显式指定文件：
 
