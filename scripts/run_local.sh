@@ -40,7 +40,8 @@ echo "Using sketch file: ${SKETCH_FILE}"
   --zones-output "${REPORT_DIR}/sketch-zones.json" \
   --json-output "${REPORT_DIR}/sketch-stats.json" \
   --csv-output "${REPORT_DIR}/sketch-stats.csv" \
-  --markdown-output "${REPORT_DIR}/sketch-report.md"
+  --markdown-output "${REPORT_DIR}/sketch-report.md" \
+  --annotated-preview-output "${REPORT_DIR}/sketch-preview-annotated.png"
 
 echo
 echo "输出目录："
@@ -51,3 +52,4 @@ echo "  ${REPORT_DIR}/sketch-zones.json"
 echo "  ${REPORT_DIR}/sketch-stats.json"
 echo "  ${REPORT_DIR}/sketch-stats.csv"
 echo "  ${REPORT_DIR}/sketch-report.md"
+echo "  ${REPORT_DIR}/sketch-preview-annotated.png"

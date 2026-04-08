@@ -8,13 +8,29 @@ import csv
 import importlib.util
 import json
 import sys
+import zipfile
 from pathlib import Path
 from typing import Any
+
+try:
+    from PIL import Image, ImageColor, ImageDraw, ImageFont
+except ModuleNotFoundError:
+    Image = None
+    ImageColor = None
+    ImageDraw = None
+    ImageFont = None
 
 
 ROOT = Path(__file__).resolve().parent
 EXTRACT_SCRIPT = ROOT / "app-layout-zoning" / "scripts" / "extract_sketch_zones.py"
-VERSION = "0.1.3"
+VERSION = "0.1.6"
+FONT_CANDIDATES = [
+    "/System/Library/Fonts/Hiragino Sans GB.ttc",
+    "/System/Library/Fonts/PingFang.ttc",
+    "/Library/Fonts/Arial Unicode.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+]
 
 
 def load_extract_module():
@@ -175,6 +191,79 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
             writer.writerow(row)
 
 
+def load_font(font_size: int):
+    if ImageFont is None:
+        return None
+    for candidate in FONT_CANDIDATES:
+        path = Path(candidate)
+        if path.exists():
+            try:
+                return ImageFont.truetype(str(path), font_size)
+            except OSError:
+                continue
+    return ImageFont.load_default()
+
+
+def hex_to_rgba(color: str, alpha: int) -> tuple[int, int, int, int]:
+    red, green, blue = ImageColor.getrgb(color)
+    return red, green, blue, alpha
+
+
+def maybe_write_annotated_preview(
+    sketch_path: Path,
+    extracted: dict[str, Any],
+    output_path: Path | None,
+) -> Path | None:
+    if output_path is None or Image is None:
+        return None
+
+    with zipfile.ZipFile(sketch_path) as archive:
+        if "previews/preview.png" not in archive.namelist():
+            return None
+        preview_bytes = archive.read("previews/preview.png")
+
+    from io import BytesIO
+
+    preview = Image.open(BytesIO(preview_bytes)).convert("RGBA")
+    overlay = Image.new("RGBA", preview.size, (255, 255, 255, 0))
+    draw = ImageDraw.Draw(overlay)
+    font = load_font(max(12, preview.height // 50))
+
+    root_width = int(extracted["source"]["root_width"])
+    root_height = int(extracted["source"]["root_height"])
+    scale_x = preview.width / root_width
+    scale_y = preview.height / root_height
+    padding = 4
+
+    for zone in extracted["zones"]:
+        x = round(zone["x"] * scale_x)
+        y = round(zone["y"] * scale_y)
+        width = max(1, round(zone["width"] * scale_x))
+        height = max(1, round(zone["height"] * scale_y))
+        color = zone.get("color", "#FF8A00")
+        draw.rectangle(
+            [(x, y), (x + width, y + height)],
+            fill=hex_to_rgba(color, 48),
+            outline=hex_to_rgba(color, 255),
+            width=max(1, preview.width // 150),
+        )
+        label = f"L{zone.get('level', '?')} {zone['label']}"
+        bbox = draw.textbbox((0, 0), label, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        label_bottom = min(preview.height, y + text_height + padding * 2)
+        label_right = min(preview.width, x + text_width + padding * 2)
+        draw.rectangle(
+            [(x, y), (label_right, label_bottom)],
+            fill=hex_to_rgba(color, 220),
+        )
+        draw.text((x + padding, y + padding), label, fill=(255, 255, 255, 255), font=font)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    Image.alpha_composite(preview, overlay).convert("RGB").save(output_path)
+    return output_path
+
+
 def pct(value: float | None) -> str:
     if value is None:
         return "-"
@@ -273,6 +362,11 @@ def cmd_report(args: argparse.Namespace) -> int:
     write_json(args.zones_output, extracted)
     write_json(args.json_output, stats)
     write_csv(args.csv_output, stats["zones"])
+    annotated_preview_path = maybe_write_annotated_preview(
+        args.sketch,
+        extracted,
+        args.annotated_preview_output,
+    )
     if args.markdown_output:
         args.markdown_output.parent.mkdir(parents=True, exist_ok=True)
         args.markdown_output.write_text(
@@ -284,6 +378,8 @@ def cmd_report(args: argparse.Namespace) -> int:
     print(f"Stats CSV: {args.csv_output}")
     if args.markdown_output:
         print(f"Markdown Report: {args.markdown_output}")
+    if annotated_preview_path:
+        print(f"Annotated Preview: {annotated_preview_path}")
     print(json.dumps(stats["level_summary"], ensure_ascii=False, indent=2))
     return 0
 
@@ -356,6 +452,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("sketch-report.md"),
         help="Output path for a human-readable Markdown report",
+    )
+    report_parser.add_argument(
+        "--annotated-preview-output",
+        type=Path,
+        default=Path("sketch-preview-annotated.png"),
+        help="Output path for an annotated preview image when the Sketch file includes previews/preview.png",
     )
     report_parser.set_defaults(func=cmd_report)
 

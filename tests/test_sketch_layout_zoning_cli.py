@@ -51,6 +51,7 @@ class SketchLayoutZoningCliTests(unittest.TestCase):
             json_output = temp / "stats.json"
             csv_output = temp / "stats.csv"
             md_output = temp / "report.md"
+            preview_output = temp / "preview.png"
             result = self.run_cli(
                 "report",
                 str(SKETCH),
@@ -62,6 +63,8 @@ class SketchLayoutZoningCliTests(unittest.TestCase):
                 str(csv_output),
                 "--markdown-output",
                 str(md_output),
+                "--annotated-preview-output",
+                str(preview_output),
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             stats = json.loads(json_output.read_text(encoding="utf-8"))
@@ -69,6 +72,7 @@ class SketchLayoutZoningCliTests(unittest.TestCase):
             self.assertTrue(zones_output.exists())
             self.assertTrue(csv_output.exists())
             self.assertTrue(md_output.exists())
+            self.assertTrue(preview_output.exists())
             self.assertIn("level_summary", stats)
             self.assertIn("tree", stats)
             self.assertGreaterEqual(len(stats["zones"]), 1)
@@ -103,6 +107,7 @@ class SketchLayoutZoningCliTests(unittest.TestCase):
             json_output = Path(temp_dir) / "stats.json"
             csv_output = Path(temp_dir) / "stats.csv"
             md_output = Path(temp_dir) / "report.md"
+            preview_output = Path(temp_dir) / "preview.png"
             page_name = self.find_first_content_page_name()
             result = self.run_cli(
                 "report",
@@ -117,6 +122,8 @@ class SketchLayoutZoningCliTests(unittest.TestCase):
                 str(csv_output),
                 "--markdown-output",
                 str(md_output),
+                "--annotated-preview-output",
+                str(preview_output),
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             stats = json.loads(json_output.read_text(encoding="utf-8"))
