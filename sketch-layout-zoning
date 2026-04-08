@@ -1,0 +1,291 @@
+#!/usr/bin/env python3
+"""CLI for extracting and reporting Sketch layout zoning."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import importlib.util
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+
+ROOT = Path(__file__).resolve().parent
+EXTRACT_SCRIPT = ROOT / "app-layout-zoning" / "scripts" / "extract_sketch_zones.py"
+
+
+def load_extract_module():
+    spec = importlib.util.spec_from_file_location("extract_sketch_zones", EXTRACT_SCRIPT)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load extract module from {EXTRACT_SCRIPT}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def compute_union_area(zones: list[dict[str, Any]]) -> int:
+    if not zones:
+        return 0
+    xs = sorted({point for zone in zones for point in (zone["x"], zone["x"] + zone["width"])})
+    ys = sorted({point for zone in zones for point in (zone["y"], zone["y"] + zone["height"])})
+    union_area = 0
+    for x_index in range(len(xs) - 1):
+        left = xs[x_index]
+        right = xs[x_index + 1]
+        if left == right:
+            continue
+        for y_index in range(len(ys) - 1):
+            top = ys[y_index]
+            bottom = ys[y_index + 1]
+            if top == bottom:
+                continue
+            covered = any(
+                zone["x"] <= left
+                and zone["x"] + zone["width"] >= right
+                and zone["y"] <= top
+                and zone["y"] + zone["height"] >= bottom
+                for zone in zones
+            )
+            if covered:
+                union_area += (right - left) * (bottom - top)
+    return union_area
+
+
+def build_parent_lookup(zones: list[dict[str, Any]]) -> dict[str, str]:
+    sketch_to_zone_id = {
+        str(zone.get("sketch_id")): str(zone["id"])
+        for zone in zones
+        if zone.get("sketch_id")
+    }
+    parent_lookup: dict[str, str] = {}
+    for zone in zones:
+        parent_id = zone.get("parent_id")
+        if parent_id:
+            parent_lookup[str(zone["id"])] = str(parent_id)
+            continue
+        parent_sketch_id = zone.get("parent_sketch_id")
+        if parent_sketch_id and str(parent_sketch_id) in sketch_to_zone_id:
+            parent_lookup[str(zone["id"])] = sketch_to_zone_id[str(parent_sketch_id)]
+    return parent_lookup
+
+
+def build_stats_payload(extracted: dict[str, Any]) -> dict[str, Any]:
+    zones = extracted["zones"]
+    root_width = int(extracted["source"]["root_width"])
+    root_height = int(extracted["source"]["root_height"])
+    root_area = root_width * root_height
+    parent_lookup = build_parent_lookup(zones)
+    zones_by_id = {str(zone["id"]): zone for zone in zones}
+
+    zone_rows: list[dict[str, Any]] = []
+    for zone in sorted(zones, key=lambda item: (item["y"], item.get("level", 999), item["x"])):
+        area = int(zone["width"]) * int(zone["height"])
+        parent_zone = zones_by_id.get(parent_lookup.get(str(zone["id"])))
+        row = {
+            **zone,
+            "area": area,
+            "coverage_pct": round(area / root_area * 100, 4),
+        }
+        if parent_zone:
+            parent_area = int(parent_zone["width"]) * int(parent_zone["height"])
+            row["parent_id"] = parent_zone["id"]
+            row["parent_label"] = parent_zone["label"]
+            row["parent_coverage_pct"] = round(area / parent_area * 100, 4)
+        zone_rows.append(row)
+
+    level_summary: dict[str, dict[str, Any]] = {}
+    levels = sorted({int(zone["level"]) for zone in zones if "level" in zone})
+    for level in levels:
+        level_zones = [zone for zone in zones if int(zone["level"]) == level]
+        union_area = compute_union_area(level_zones)
+        area_sum = sum(int(zone["width"]) * int(zone["height"]) for zone in level_zones)
+        level_summary[str(level)] = {
+            "zone_count": len(level_zones),
+            "coverage_area": union_area,
+            "coverage_pct": round(union_area / root_area * 100, 4),
+            "sum_of_zone_areas": area_sum,
+            "sum_of_zone_areas_pct": round(area_sum / root_area * 100, 4),
+        }
+
+    tree_children: dict[str, list[dict[str, Any]]] = {}
+    for row in zone_rows:
+        parent_id = row.get("parent_id")
+        if parent_id:
+            tree_children.setdefault(str(parent_id), []).append(row)
+
+    roots = [row for row in zone_rows if "parent_id" not in row]
+
+    def attach_children(row: dict[str, Any]) -> dict[str, Any]:
+        children = [attach_children(child) for child in tree_children.get(str(row["id"]), [])]
+        return {**row, "children": children}
+
+    tree = [attach_children(root) for root in roots]
+
+    return {
+        "source": extracted["source"],
+        "summary": {
+            "zone_count": len(zone_rows),
+            "coverage_area": compute_union_area(zones),
+            "coverage_pct": round(compute_union_area(zones) / root_area * 100, 4),
+            "sum_of_zone_areas": sum(row["area"] for row in zone_rows),
+            "sum_of_zone_areas_pct": round(
+                sum(row["area"] for row in zone_rows) / root_area * 100, 4
+            ),
+        },
+        "level_summary": level_summary,
+        "zones": zone_rows,
+        "tree": tree,
+    }
+
+
+def write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "id",
+                "label",
+                "level",
+                "x",
+                "y",
+                "width",
+                "height",
+                "area",
+                "coverage_pct",
+                "parent_id",
+                "parent_label",
+                "parent_coverage_pct",
+                "sketch_id",
+                "parent_sketch_id",
+            ],
+            extrasaction="ignore",
+        )
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
+def extract_payload(args: argparse.Namespace) -> dict[str, Any]:
+    module = load_extract_module()
+    _, page = module.choose_page(args.sketch, args.page_name)
+    root_layer = module.choose_root(page, args.root_name)
+    _, _, root_w, root_h = module.get_frame(root_layer)
+    zones = module.collect_zones(
+        root_layer,
+        max_depth=args.max_depth,
+        root_origin=(0, 0),
+        root_width=int(round(root_w)),
+        root_area=int(round(root_w * root_h)),
+        min_area_ratio=args.min_area_ratio,
+        min_width_ratio=args.min_width_ratio,
+    )
+    return module.build_output(args.sketch.resolve(), str(page.get("name") or ""), root_layer, zones)
+
+
+def cmd_extract(args: argparse.Namespace) -> int:
+    payload = extract_payload(args)
+    write_json(args.output, payload)
+    print(f"Extracted zones: {args.output}")
+    print(f"Selected page: {payload['source']['page_name']}")
+    print(f"Selected root: {payload['source']['root_name']}")
+    print(f"Zone count: {len(payload['zones'])}")
+    return 0
+
+
+def cmd_report(args: argparse.Namespace) -> int:
+    extracted = extract_payload(args)
+    stats = build_stats_payload(extracted)
+    write_json(args.zones_output, extracted)
+    write_json(args.json_output, stats)
+    write_csv(args.csv_output, stats["zones"])
+    print(f"Zones JSON: {args.zones_output}")
+    print(f"Stats JSON: {args.json_output}")
+    print(f"Stats CSV: {args.csv_output}")
+    print(json.dumps(stats["level_summary"], ensure_ascii=False, indent=2))
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="sketch-layout-zoning",
+        description="Extract up to 3 levels of zones from a Sketch file and compute area-share stats.",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    def add_shared_arguments(subparser: argparse.ArgumentParser) -> None:
+        subparser.add_argument("sketch", type=Path, help="Path to the Sketch file")
+        subparser.add_argument("--page-name", help="Sketch page name to use")
+        subparser.add_argument("--root-name", help="Root group/artboard name to use")
+        subparser.add_argument("--max-depth", type=int, default=3, help="Maximum levels to extract")
+        subparser.add_argument(
+            "--min-area-ratio",
+            type=float,
+            default=0.003,
+            help="Skip tiny groups below this fraction of the root area",
+        )
+        subparser.add_argument(
+            "--min-width-ratio",
+            type=float,
+            default=0.18,
+            help="Skip groups narrower than this fraction of root width",
+        )
+
+    extract_parser = subparsers.add_parser("extract", help="Extract zones JSON from Sketch")
+    add_shared_arguments(extract_parser)
+    extract_parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("sketch-zones.json"),
+        help="Output path for extracted zones JSON",
+    )
+    extract_parser.set_defaults(func=cmd_extract)
+
+    report_parser = subparsers.add_parser(
+        "report",
+        help="Extract zones and compute area-share stats directly from Sketch",
+    )
+    add_shared_arguments(report_parser)
+    report_parser.add_argument(
+        "--zones-output",
+        type=Path,
+        default=Path("sketch-zones.json"),
+        help="Output path for extracted zones JSON",
+    )
+    report_parser.add_argument(
+        "--json-output",
+        type=Path,
+        default=Path("sketch-stats.json"),
+        help="Output path for stats JSON",
+    )
+    report_parser.add_argument(
+        "--csv-output",
+        type=Path,
+        default=Path("sketch-stats.csv"),
+        help="Output path for stats CSV",
+    )
+    report_parser.set_defaults(func=cmd_report)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        return int(args.func(args))
+    except Exception as exc:  # noqa: BLE001
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,23 @@
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# local artifacts
+out/
+e2e-output/
+e2e-test01-output/
+sketch-test01-output/
+tmp-sample-output/
+cli-sketch-*.json
+cli-sketch-*.csv
+*-zones-for-image.json
+tmp-sample-zones.json
+e2e-test01-zones.json
+sketch-test01-zones.json
+
+# local fixtures
+*.sketch
+*.png
+*.jpg
