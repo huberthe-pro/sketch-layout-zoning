@@ -6,6 +6,7 @@ __pycache__/
 
 # local artifacts
 out/
+output/
 e2e-output/
 e2e-test01-output/
 sketch-test01-output/

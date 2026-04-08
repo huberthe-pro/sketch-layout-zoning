@@ -47,6 +47,30 @@ python3 -m pip install Pillow
   --csv-output sketch-stats.csv
 ```
 
+## 本地快速运行
+
+如果你在仓库根目录下新建了 `sketch/`，并把待处理的 `.sketch` 文件放进去，可以直接用辅助脚本：
+
+```bash
+./scripts/run_local.sh
+```
+
+它会默认读取 `./sketch` 目录里的第一个 `.sketch` 文件，并把结果写到 `./output`。
+
+如果要显式指定文件：
+
+```bash
+./scripts/run_local.sh ./sketch/你的文件名.sketch
+```
+
+本地测试脚本：
+
+```bash
+./scripts/test_local.sh
+```
+
+它会自动把 `./sketch` 目录里的第一个 `.sketch` 文件设置为 `SKETCH_LAYOUT_ZONING_FIXTURE`。如果目录里没有样例文件，也能跑基础测试。
+
 可选参数：
 
 - `--page-name` 指定 Sketch page
