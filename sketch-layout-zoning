@@ -14,7 +14,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent
 EXTRACT_SCRIPT = ROOT / "app-layout-zoning" / "scripts" / "extract_sketch_zones.py"
-VERSION = "0.1.0"
+VERSION = "0.1.3"
 
 
 def load_extract_module():
